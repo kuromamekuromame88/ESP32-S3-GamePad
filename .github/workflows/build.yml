@@ -10,15 +10,14 @@ jobs:
 
     strategy:
       matrix:
-        board: [esp32s3usbotg]  # 複数ボード対応可 [board1,board2]
-        # https://docs.platformio.org/en/latest/boards/ でボードIDを調べられます。
+        board: [esp32s3usbotg]  # 複数ボード対応可
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.MY_PAT }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,7 +54,7 @@ jobs:
 
           git add -A
           git commit -m "Add firmware for ${{ matrix.board }} from commit $GITHUB_SHA" || echo "No changes to commit"
-          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }} firmware-builds --force
+          git push https://x-access-token:${{ secrets.MY_PAT }}@github.com/${{ github.repository }} firmware-builds --force
 
       # --- GitHub Releaseを作成＆アップロード ---
       - name: Create GitHub Release
@@ -72,4 +71,4 @@ jobs:
             firmware/${{ matrix.board }}/firmware.bin
             firmware/${{ matrix.board }}/info.txt
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MY_PAT }}
