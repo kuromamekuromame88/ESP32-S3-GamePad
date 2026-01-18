@@ -1,86 +1,58 @@
 #include <Arduino.h>
-#include "USB.h"
-#include "USBHIDGamepad.h"
+#include "switch_ESP32.h"
 
-USBHIDGamepad gamepad;
+SwitchController Gamepad;
 
-// --- GPIO（あとで変更可） ---
-const int dpadUp    = 9;
-const int dpadDown  = 10;
-const int dpadLeft  = 11;
-const int dpadRight = 3;
+// --- ピン定義 ---
+#define PIN_LX 18
+#define PIN_LY 17
+#define PIN_RX 15
+#define PIN_RY 16
 
-const int btnA = 5;
-const int btnB = 4;
-const int btnX = 6;
-const int btnY = 7;
+#define PIN_UP 9
+#define PIN_RIGHT 3
+#define PIN_DOWN 10
+#define PIN_LEFT 7
 
-const int btnZL = 2;
-const int btnZR = 1;
+#define PIN_ZL 2
+#define PIN_ZR 1
 
-const int LX = 18;
-const int LY = 17;
-const int RX = 15;
-const int RY = 16;
-
-// --- HAT計算 ---
-uint8_t getHat() {
-  bool u = !digitalRead(dpadUp);
-  bool d = !digitalRead(dpadDown);
-  bool l = !digitalRead(dpadLeft);
-  bool r = !digitalRead(dpadRight);
-
-  if (u && r) return 1;
-  if (r && d) return 3;
-  if (d && l) return 5;
-  if (l && u) return 7;
-  if (u) return 0;
-  if (r) return 2;
-  if (d) return 4;
-  if (l) return 6;
-  return 8;
-}
-
-// --- ADC ---
-int readAxis(int pin) {
-  int raw = analogRead(pin);
-  return map(raw, 0, 4095, -127, 127);
+// ADC → Switch用範囲へ変換（0〜4095 → -32768〜32767）
+int16_t readStick(int pin) {
+  int v = analogRead(pin);
+  return map(v, 0, 4095, -32768, 32767);
 }
 
 void setup() {
-  pinMode(dpadUp, INPUT_PULLUP);
-  pinMode(dpadDown, INPUT_PULLUP);
-  pinMode(dpadLeft, INPUT_PULLUP);
-  pinMode(dpadRight, INPUT_PULLUP);
-
-  pinMode(btnA, INPUT_PULLUP);
-  pinMode(btnB, INPUT_PULLUP);
-  pinMode(btnX, INPUT_PULLUP);
-  pinMode(btnY, INPUT_PULLUP);
-  pinMode(btnZL, INPUT_PULLUP);
-  pinMode(btnZR, INPUT_PULLUP);
+  pinMode(PIN_UP, INPUT_PULLUP);
+  pinMode(PIN_RIGHT, INPUT_PULLUP);
+  pinMode(PIN_DOWN, INPUT_PULLUP);
+  pinMode(PIN_LEFT, INPUT_PULLUP);
+  pinMode(PIN_ZL, INPUT_PULLUP);
+  pinMode(PIN_ZR, INPUT_PULLUP);
 
   analogReadResolution(12);
 
-  USB.begin();
-  gamepad.begin();
+  Gamepad.begin();
 }
 
 void loop() {
-  gamepad.releaseAll();
+  // スティック
+  Gamepad.lStick(readStick(PIN_LX), readStick(PIN_LY));
+  Gamepad.rStick(readStick(PIN_RX), readStick(PIN_RY));
 
-  if (!digitalRead(btnA)) gamepad.pressButton(1);
-  if (!digitalRead(btnB)) gamepad.pressButton(2);
-  if (!digitalRead(btnX)) gamepad.pressButton(3);
-  if (!digitalRead(btnY)) gamepad.pressButton(4);
-  if (!digitalRead(btnZL)) gamepad.pressButton(5);
-  if (!digitalRead(btnZR)) gamepad.pressButton(6);
+  // 十字キー
+  Gamepad.dpad(
+    !digitalRead(PIN_UP),
+    !digitalRead(PIN_DOWN),
+    !digitalRead(PIN_LEFT),
+    !digitalRead(PIN_RIGHT)
+  );
 
-  gamepad.leftStick(readAxis(LX), readAxis(LY));
-  gamepad.rightStick(readAxis(RX), readAxis(RY));
+  // ショルダー
+  Gamepad.buttonZL(!digitalRead(PIN_ZL));
+  Gamepad.buttonZR(!digitalRead(PIN_ZR));
 
-  gamepad.hat(getHat());
-  gamepad.sendReport();
-
+  Gamepad.sendReport();
   delay(5);
 }
