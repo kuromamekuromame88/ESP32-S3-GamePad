@@ -13,7 +13,7 @@ NSGamepad Gamepad;
 #define UP 9
 #define RIGHT 3
 #define DOWN 10
-#define LEFT 7
+#define LEFT 11
 
 // --- ショルダー ---
 #define ZL 2
