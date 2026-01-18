@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "switch_ESP32.h"
 
-SwitchController Gamepad;
+NSGamepad Gamepad;
 
 // --- ピン定義 ---
 #define PIN_LX 18
