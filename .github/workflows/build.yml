@@ -56,6 +56,12 @@ jobs:
           git commit -m "Add firmware for ${{ matrix.board }} from commit $GITHUB_SHA" || echo "No changes to commit"
           git push https://x-access-token:${{ secrets.MY_PAT }}@github.com/${{ github.repository }} firmware-builds --force
 
+      - name: artifactへのアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware.bin
+          path: firmware/${{ matrix.board }}/firmware.bin
+      
       # --- GitHub Releaseを作成＆アップロード ---
       - name: Create GitHub Release
         id: create_release
