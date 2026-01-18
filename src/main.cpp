@@ -1,9 +1,8 @@
 #include <Arduino.h>
 #include "switch_ESP32.h"
 
-NSGamepad pad;
+NSGamepad Gamepad;
 
-// --- ピン ---
 #define LX 18
 #define LY 17
 #define RX 15
@@ -17,10 +16,8 @@ NSGamepad pad;
 #define ZL 2
 #define ZR 1
 
-// ADCをSwitch形式へ変換（中央128）
 uint8_t axis(int pin){
-  int v = analogRead(pin);
-  return map(v, 0, 4095, 0, 255);
+  return map(analogRead(pin), 0, 4095, 0, 255);
 }
 
 void setup() {
@@ -33,30 +30,28 @@ void setup() {
 
   analogReadResolution(12);
 
-  pad.begin();
+  Gamepad.begin();
+  USB.begin();   // ← サンプル通りここでUSB開始
 }
 
 void loop() {
-  pad.releaseAll();
+  Gamepad.releaseAll();
 
-  // スティック
-  pad.leftXAxis(axis(LX));
-  pad.leftYAxis(axis(LY));
-  pad.rightXAxis(axis(RX));
-  pad.rightYAxis(axis(RY));
+  Gamepad.leftXAxis(axis(LX));
+  Gamepad.leftYAxis(axis(LY));
+  Gamepad.rightXAxis(axis(RX));
+  Gamepad.rightYAxis(axis(RY));
 
-  // 十字キー
-  pad.dPad(
+  Gamepad.dPad(
     !digitalRead(UP),
     !digitalRead(DOWN),
     !digitalRead(LEFT),
     !digitalRead(RIGHT)
   );
 
-  // ZL / ZR
-  if(!digitalRead(ZL)) pad.press(NSButton_LeftTrigger);
-  if(!digitalRead(ZR)) pad.press(NSButton_RightTrigger);
+  if(!digitalRead(ZL)) Gamepad.press(NSButton_LeftTrigger);
+  if(!digitalRead(ZR)) Gamepad.press(NSButton_RightTrigger);
 
-  pad.write();
+  Gamepad.loop();   // ← これが公式の送信処理
   delay(5);
 }
