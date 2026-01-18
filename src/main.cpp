@@ -1,132 +1,86 @@
 #include <Arduino.h>
-#include <BleMouse.h>
+#include "USB.h"
+#include "USBHIDGamepad.h"
 
-// ピン定義
-#define VRX1 5  // 移動用スティックX
-#define VRY1 4  // 移動用スティックY
-#define VRX2 10  // クリック/スクロール用スティックX
-#define VRY2 9  // クリック/スクロール用スティックY
+USBHIDGamepad gamepad;
 
-BleMouse bleMouse("ESP32 Mouse", "MyMouse", 100);
+// --- GPIO（あとで変更可） ---
+const int dpadUp    = 9;
+const int dpadDown  = 10;
+const int dpadLeft  = 11;
+const int dpadRight = 3;
 
-// ドラッグ・クリック管理用変数
-unsigned long leftStartTime = 0;
-unsigned long rightStartTime = 0;
+const int btnA = 5;
+const int btnB = 4;
+const int btnX = 6;
+const int btnY = 7;
 
-bool leftHolding = false;
-bool rightHolding = false;
+const int btnZL = 2;
+const int btnZR = 1;
 
-bool leftDragging = false;
-bool rightDragging = false;
+const int LX = 18;
+const int LY = 17;
+const int RX = 15;
+const int RY = 16;
 
-const int DRAG_THRESHOLD = 200;
+// --- HAT計算 ---
+uint8_t getHat() {
+  bool u = !digitalRead(dpadUp);
+  bool d = !digitalRead(dpadDown);
+  bool l = !digitalRead(dpadLeft);
+  bool r = !digitalRead(dpadRight);
 
-int x1_center = 2048;
-int y1_center = 2048;
-int x2_center = 2048;
-int y2_center = 2048;
+  if (u && r) return 1;
+  if (r && d) return 3;
+  if (d && l) return 5;
+  if (l && u) return 7;
+  if (u) return 0;
+  if (r) return 2;
+  if (d) return 4;
+  if (l) return 6;
+  return 8;
+}
+
+// --- ADC ---
+int readAxis(int pin) {
+  int raw = analogRead(pin);
+  return map(raw, 0, 4095, -127, 127);
+}
 
 void setup() {
-  Serial.begin(115200);
+  pinMode(dpadUp, INPUT_PULLUP);
+  pinMode(dpadDown, INPUT_PULLUP);
+  pinMode(dpadLeft, INPUT_PULLUP);
+  pinMode(dpadRight, INPUT_PULLUP);
 
-  pinMode(VRX1, INPUT);
-  pinMode(VRY1, INPUT);
-  pinMode(VRX2, INPUT);
-  pinMode(VRY2, INPUT);
+  pinMode(btnA, INPUT_PULLUP);
+  pinMode(btnB, INPUT_PULLUP);
+  pinMode(btnX, INPUT_PULLUP);
+  pinMode(btnY, INPUT_PULLUP);
+  pinMode(btnZL, INPUT_PULLUP);
+  pinMode(btnZR, INPUT_PULLUP);
 
-  delay(500);
-  // 起動時に中心値をキャリブレーション
-  x1_center = analogRead(VRX1);
-  y1_center = analogRead(VRY1);
-  x2_center = analogRead(VRX2);
-  y2_center = analogRead(VRY2);
+  analogReadResolution(12);
 
-  Serial.println("Calibration:");
-  Serial.printf("X1:%d Y1:%d X2:%d Y2:%d\n", x1_center, y1_center, x2_center, y2_center);
-
-  bleMouse.begin();
+  USB.begin();
+  gamepad.begin();
 }
 
 void loop() {
-  if (bleMouse.isConnected()) {
-    // === スティック①：マウス移動 ===
-    int x1_raw = analogRead(VRX1);
-    int y1_raw = analogRead(VRY1);
+  gamepad.releaseAll();
 
-    int x1_offset = x1_raw - x1_center;
-    int y1_offset = y1_raw - y1_center;
+  if (!digitalRead(btnA)) gamepad.pressButton(1);
+  if (!digitalRead(btnB)) gamepad.pressButton(2);
+  if (!digitalRead(btnX)) gamepad.pressButton(3);
+  if (!digitalRead(btnY)) gamepad.pressButton(4);
+  if (!digitalRead(btnZL)) gamepad.pressButton(5);
+  if (!digitalRead(btnZR)) gamepad.pressButton(6);
 
-    int move_deadzone = 100;
-    int dx = 0, dy = 0;
+  gamepad.leftStick(readAxis(LX), readAxis(LY));
+  gamepad.rightStick(readAxis(RX), readAxis(RY));
 
-    if (abs(x1_offset) > move_deadzone) {
-      dx = map(x1_offset, -2048, 2048, -30, 30);
-    }
+  gamepad.hat(getHat());
+  gamepad.sendReport();
 
-    if (abs(y1_offset) > move_deadzone) {
-      dy = map(y1_offset, -2048, 2048, 30, -30);
-    }
-
-    // === スティック②：スクロール・クリック/ドラッグ ===
-    int x2 = analogRead(VRX2);
-    int y2 = analogRead(VRY2);
-
-    int adjustedY2 = y2 - y2_center;
-    int scroll = 0;
-    int scroll_deadzone = 100;
-
-    if (adjustedY2 > scroll_deadzone) {
-      scroll = map(adjustedY2, scroll_deadzone, 2048, 1, 5);
-    } else if (adjustedY2 < -scroll_deadzone) {
-      scroll = map(adjustedY2, -scroll_deadzone, -2048, -1, -5);
-    }
-    // ※ 反転は無し
-
-    // --- クリック用デッドゾーン処理 ---
-    const int click_threshold = 400;
-
-    if (x2 < (x2_center - click_threshold)) {
-      if (!leftHolding) {
-        leftStartTime = millis();
-        leftHolding = true;
-      } else if (!leftDragging && millis() - leftStartTime > DRAG_THRESHOLD) {
-        bleMouse.press(MOUSE_LEFT);
-        leftDragging = true;
-      }
-    } else if (x2 > (x2_center + click_threshold)) {
-      if (!rightHolding) {
-        rightStartTime = millis();
-        rightHolding = true;
-      } else if (!rightDragging && millis() - rightStartTime > DRAG_THRESHOLD) {
-        bleMouse.press(MOUSE_RIGHT);
-        rightDragging = true;
-      }
-    } else {
-      if (leftHolding) {
-        if (!leftDragging) {
-          bleMouse.click(MOUSE_LEFT);
-        } else {
-          bleMouse.release(MOUSE_LEFT);
-        }
-        leftHolding = false;
-        leftDragging = false;
-      }
-      if (rightHolding) {
-        if (!rightDragging) {
-          bleMouse.click(MOUSE_RIGHT);
-        } else {
-          bleMouse.release(MOUSE_RIGHT);
-        }
-        rightHolding = false;
-        rightDragging = false;
-      }
-    }
-
-    // === 実行 ===
-    if (dx != 0 || dy != 0 || scroll != 0) {
-      bleMouse.move(dx, dy, scroll);
-    }
-
-    delay(20);
-  }
+  delay(5);
 }
