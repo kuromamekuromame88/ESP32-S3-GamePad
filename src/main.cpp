@@ -134,6 +134,15 @@ void loop(){
   Gamepad.rightXAxis(axis(RX));
   Gamepad.rightYAxis(axis(RY));
 
+  // dPad（手動のみ） ※マクロ対象外
+  Gamepad.dPad(
+    !digitalRead(UP),
+    !digitalRead(DOWN),
+    !digitalRead(LEFT),
+    !digitalRead(RIGHT)
+  );
+
+
   Gamepad.buttons(merged);
   Gamepad.loop();
   delay(5);
