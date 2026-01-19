@@ -4,8 +4,7 @@
 NSGamepad Gamepad;
 
 // --- マクロボタン ---
-#define MStart1 -1
-#define MStart2 -1
+#define MStart1 42
 
 // --- スティック ---
 #define LX 18
@@ -14,8 +13,8 @@ NSGamepad Gamepad;
 #define RY 16
 
 //スティック押し込み
-#define LB -1
-#define RB -1
+#define LB 39
+#define RB 40
 
 // --- 十字キー ---
 #define UP 3
@@ -27,11 +26,11 @@ NSGamepad Gamepad;
 #define ZL 2
 #define ZR 1
 
-#define L -1
-#define R -1
+#define L 35
+#define R 36
 
-#define PLUS -1
-#define MINUS -1
+#define PLUS 38
+#define MINUS 37
 
 // --- フェイスボタン（仮ピン） ---
 #define BTN_B 5
@@ -92,8 +91,8 @@ void loop() {
   if(!digitalRead(ZR)) Gamepad.press(NSButton_RightTrigger);
 
   //L / R
-  //if(!digitalRead(L)) Gamepad.press(NSButton_LeftThrottle);
-  //if(!digitalRead(R)) Gamepad.press(NSButton_RightThrottle);
+  if(!digitalRead(L)) Gamepad.press(NSButton_LeftThrottle);
+  if(!digitalRead(R)) Gamepad.press(NSButton_RightThrottle);
   
   //マクロ
   //マクロの方針 - 通常モード使用中でも記録・再生可能、長押しで記録開始、短押しで再生
