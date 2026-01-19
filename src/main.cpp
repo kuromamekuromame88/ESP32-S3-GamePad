@@ -83,8 +83,8 @@ void loop() {
   Gamepad.rightYAxis(axis(RY));
 
   //スティックボタン
-  if(!digitalRead(LB) Gamepad.press(NSButton_LeftStick);
-  if(!digitalRead(RB) Gamepad.press(NSButton_RightStick);
+  if(!digitalRead(LB)) Gamepad.press(NSButton_LeftStick);
+  if(!digitalRead(RB)) Gamepad.press(NSButton_RightStick);
   
 
   // 十字キー
@@ -110,8 +110,8 @@ void loop() {
   if(!digitalRead(R)) Gamepad.press(NSButton_RightThrottle);
 
   // + -
-  if(!digitalRead(PLUS) Gamepad.press(NSButton_Plus);
-  if(!digitalRead(MINUS) Gamepad.press(NSButton_Minus);
+  if(!digitalRead(PLUS)) Gamepad.press(NSButton_Plus);
+  if(!digitalRead(MINUS)) Gamepad.press(NSButton_Minus);
   
   //マクロ
   //マクロの方針 - 通常モード使用中でも記録・再生可能、長押しで記録開始、短押しで再生
