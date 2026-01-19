@@ -10,8 +10,8 @@ NSGamepad Gamepad;
 #define RY 16
 
 // --- 十字キー ---
-#define UP 9
-#define RIGHT 3
+#define UP 3
+#define RIGHT 9
 #define DOWN 10
 #define LEFT 11
 
@@ -20,10 +20,10 @@ NSGamepad Gamepad;
 #define ZR 1
 
 // --- フェイスボタン（仮ピン） ---
-#define BTN_B 4
-#define BTN_A 5
-#define BTN_X 6
-#define BTN_Y 7
+#define BTN_B 5
+#define BTN_A 4
+#define BTN_X 7
+#define BTN_Y 6
 
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
