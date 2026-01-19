@@ -43,12 +43,22 @@ uint8_t axis(int pin){
 }
 
 void setup() {
+  pinMode(MStart1, INPUT_PULLUP);
+
+  pinMode(LB, INPUT_PULLUP);
+  pinMode(RB, INPUT_PULLUP);
+  
   pinMode(UP, INPUT_PULLUP);
   pinMode(RIGHT, INPUT_PULLUP);
   pinMode(DOWN, INPUT_PULLUP);
   pinMode(LEFT, INPUT_PULLUP);
   pinMode(ZL, INPUT_PULLUP);
   pinMode(ZR, INPUT_PULLUP);
+  pinMode(L, INPUT_PULLUP);
+  pinMode(R, INPUT_PULLUP);
+
+  pinMode(PLUS, INPUT_PULLUP);
+  pinMode(MINUS, INPUT_PULLUP);
 
   pinMode(BTN_A, INPUT_PULLUP);
   pinMode(BTN_B, INPUT_PULLUP);
@@ -72,6 +82,11 @@ void loop() {
   Gamepad.rightXAxis(axis(RX));
   Gamepad.rightYAxis(axis(RY));
 
+  //スティックボタン
+  if(!digitalRead(LB) Gamepad.press(NSButton_LeftStick);
+  if(!digitalRead(RB) Gamepad.press(NSButton_RightStick);
+  
+
   // 十字キー
   Gamepad.dPad(
     !digitalRead(UP),
@@ -93,6 +108,10 @@ void loop() {
   //L / R
   if(!digitalRead(L)) Gamepad.press(NSButton_LeftThrottle);
   if(!digitalRead(R)) Gamepad.press(NSButton_RightThrottle);
+
+  // + -
+  if(!digitalRead(PLUS) Gamepad.press(NSButton_Plus);
+  if(!digitalRead(MINUS) Gamepad.press(NSButton_Minus);
   
   //マクロ
   //マクロの方針 - 通常モード使用中でも記録・再生可能、長押しで記録開始、短押しで再生
