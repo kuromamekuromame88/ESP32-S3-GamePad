@@ -20,10 +20,11 @@ Preferences prefs;
 #define DOWN 10
 #define LEFT 11
 
-#define ZL 2
-#define ZR 1
-#define L 35
-#define R 36
+#define ZL 35
+#define ZR 36
+#define L 2
+#define R 1
+
 #define PLUS 38
 #define MINUS 37
 
@@ -31,6 +32,8 @@ Preferences prefs;
 #define BTN_A 4
 #define BTN_X 7
 #define BTN_Y 6
+
+#define TURBO_INTERVAL 40   // ← 連打速度(ms) 小さいほど高速
 
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
@@ -44,6 +47,10 @@ unsigned long lastChange=0;
 uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
+
+// turbo用
+unsigned long turboTimer=0;
+bool turboState=false;
 
 uint16_t readButtons(){
   uint16_t s = 0;
@@ -90,8 +97,7 @@ void setup(){
   for(int p:pins) pinMode(p,INPUT_PULLUP);
 
   analogReadResolution(12);
-
-  loadMacro();   // ← 起動時に読み込み
+  loadMacro();
 
   Gamepad.begin();
   USB.begin();
@@ -110,7 +116,7 @@ void loop(){
         lastChange=millis();
       }else{
         recordState(readButtons());
-        saveMacro();     // ← 録画終了時に保存
+        saveMacro();
       }
     }else if(macro.length()>0){
       playing=true;
@@ -141,6 +147,19 @@ void loop(){
   }
 
   uint16_t merged = manual | macroButtons;
+
+  // ===== A同時押し時のみ連打 =====
+  bool turboActive =
+    (manual & (1 << NSButton_A)) &&
+    (macroButtons & (1 << NSButton_A));
+
+  if(turboActive && millis()-turboTimer > TURBO_INTERVAL){
+    turboTimer = millis();
+    turboState = !turboState;
+
+    if(turboState) merged |=  (1 << NSButton_A);
+    else           merged &= ~(1 << NSButton_A);
+  }
 
   Gamepad.leftXAxis(255-axis(LX));
   Gamepad.leftYAxis(255-axis(LY));
