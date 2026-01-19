@@ -46,23 +46,25 @@ unsigned long pressTime=0;
 uint16_t macroButtons=0;
 
 uint16_t readButtons(){
-  uint16_t s=0;
-  if(!digitalRead(BTN_A)) s|=1<<0;
-  if(!digitalRead(BTN_B)) s|=1<<1;
-  if(!digitalRead(BTN_X)) s|=1<<2;
-  if(!digitalRead(BTN_Y)) s|=1<<3;
-  if(!digitalRead(L)) s|=1<<4;
-  if(!digitalRead(R)) s|=1<<5;
-  if(!digitalRead(ZL)) s|=1<<6;
-  if(!digitalRead(ZR)) s|=1<<7;
-  if(!digitalRead(PLUS)) s|=1<<8;
-  if(!digitalRead(MINUS)) s|=1<<9;
-  if(!digitalRead(LB)) s|=1<<10;
-  if(!digitalRead(RB)) s|=1<<11;
-  if(!digitalRead(UP)) s|=1<<12;
-  if(!digitalRead(DOWN)) s|=1<<13;
-  if(!digitalRead(LEFT)) s|=1<<14;
-  if(!digitalRead(RIGHT)) s|=1<<15;
+  uint16_t s = 0;
+
+  if(!digitalRead(BTN_Y)) s |= 1 << NSButton_Y;
+  if(!digitalRead(BTN_B)) s |= 1 << NSButton_B;
+  if(!digitalRead(BTN_A)) s |= 1 << NSButton_A;
+  if(!digitalRead(BTN_X)) s |= 1 << NSButton_X;
+
+  if(!digitalRead(ZL)) s |= 1 << NSButton_LeftTrigger;
+  if(!digitalRead(ZR)) s |= 1 << NSButton_RightTrigger;
+
+  if(!digitalRead(L))  s |= 1 << NSButton_LeftThrottle;
+  if(!digitalRead(R))  s |= 1 << NSButton_RightThrottle;
+
+  if(!digitalRead(MINUS)) s |= 1 << NSButton_Minus;
+  if(!digitalRead(PLUS))  s |= 1 << NSButton_Plus;
+
+  if(!digitalRead(LB)) s |= 1 << NSButton_LeftStick;
+  if(!digitalRead(RB)) s |= 1 << NSButton_RightStick;
+
   return s;
 }
 
