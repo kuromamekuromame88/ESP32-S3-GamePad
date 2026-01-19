@@ -33,8 +33,6 @@ Preferences prefs;
 #define BTN_X 7
 #define BTN_Y 6
 
-#define TURBO_INTERVAL 40   // ← 連打速度(ms) 小さいほど高速
-
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
@@ -43,14 +41,13 @@ uint8_t axis(int pin){
 String macro="";
 bool recording=false;
 bool playing=false;
+bool rapidA=false;
+
+unsigned long lastRapid=0;
 unsigned long lastChange=0;
 uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
-
-// turbo用
-unsigned long turboTimer=0;
-bool turboState=false;
 
 uint16_t readButtons(){
   uint16_t s = 0;
@@ -105,31 +102,56 @@ void setup(){
 
 void loop(){
 
+  uint16_t manual=readButtons();
+
+  // ==== MStart 押下検出 ====
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime=millis();
   }else if(pressTime){
-    if(millis()-pressTime>1000){
+    unsigned long held = millis()-pressTime;
+
+    if(held>1000){
       recording=!recording;
       if(recording){
         macro="";
-        lastState=readButtons();
+        lastState=manual;
         lastChange=millis();
       }else{
-        recordState(readButtons());
+        recordState(manual);
         saveMacro();
       }
-    }else if(macro.length()>0){
-      playing=true;
+    }
+    else{
+      if(manual & (1<<NSButton_A)){
+        rapidA=true;     // ← A連打モード
+      }
+      else if(macro.length()>0){
+        playing=true;    // ← マクロ再生
+      }
     }
     pressTime=0;
   }
 
-  uint16_t manual=readButtons();
+  // ==== A連打処理 ====
+  static bool rapidState=false;
+  if(rapidA){
+    if(millis()-lastRapid>40){
+      rapidState=!rapidState;
+      lastRapid=millis();
+    }
+    if(!digitalRead(MStart1)==false) rapidA=false;
+  }
+
+  if(rapidState) manual |= (1<<NSButton_A);
+  else manual &= ~(1<<NSButton_A);
+
+  // ==== 録画 ====
   if(recording && manual!=lastState){
     recordState(lastState);
     lastState=manual;
   }
 
+  // ==== マクロ再生 ====
   static int idx=0;
   static unsigned long wait=0;
 
@@ -147,19 +169,6 @@ void loop(){
   }
 
   uint16_t merged = manual | macroButtons;
-
-  // ===== A同時押し時のみ連打 =====
-  bool turboActive =
-    (manual & (1 << NSButton_A)) &&
-    (macroButtons & (1 << NSButton_A));
-
-  if(turboActive && millis()-turboTimer > TURBO_INTERVAL){
-    turboTimer = millis();
-    turboState = !turboState;
-
-    if(turboState) merged |=  (1 << NSButton_A);
-    else           merged &= ~(1 << NSButton_A);
-  }
 
   Gamepad.leftXAxis(255-axis(LX));
   Gamepad.leftYAxis(255-axis(LY));
