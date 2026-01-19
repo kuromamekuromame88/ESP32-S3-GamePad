@@ -1,9 +1,9 @@
-//（全体差し替えOK）
-
 #include <Arduino.h>
+#include <Preferences.h>
 #include "switch_ESP32.h"
 
 NSGamepad Gamepad;
+Preferences prefs;
 
 #define MStart1 42
 
@@ -73,18 +73,32 @@ void recordState(uint16_t s){
   lastChange=millis();
 }
 
+void saveMacro(){
+  prefs.begin("macro", false);
+  prefs.putString("data", macro);
+  prefs.end();
+}
+
+void loadMacro(){
+  prefs.begin("macro", true);
+  macro = prefs.getString("data", "");
+  prefs.end();
+}
+
 void setup(){
   int pins[]={MStart1,LB,RB,UP,RIGHT,DOWN,LEFT,ZL,ZR,L,R,PLUS,MINUS,BTN_A,BTN_B,BTN_X,BTN_Y};
   for(int p:pins) pinMode(p,INPUT_PULLUP);
 
   analogReadResolution(12);
+
+  loadMacro();   // ← 起動時に読み込み
+
   Gamepad.begin();
   USB.begin();
 }
 
 void loop(){
 
-  // ==== マクロボタン ====
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime=millis();
   }else if(pressTime){
@@ -96,6 +110,7 @@ void loop(){
         lastChange=millis();
       }else{
         recordState(readButtons());
+        saveMacro();     // ← 録画終了時に保存
       }
     }else if(macro.length()>0){
       playing=true;
@@ -109,7 +124,6 @@ void loop(){
     lastState=manual;
   }
 
-  // ==== 再生処理（macroButtons更新のみ）====
   static int idx=0;
   static unsigned long wait=0;
 
@@ -128,20 +142,17 @@ void loop(){
 
   uint16_t merged = manual | macroButtons;
 
-  // ==== 軸は常に手動優先 ====
   Gamepad.leftXAxis(255-axis(LX));
   Gamepad.leftYAxis(255-axis(LY));
   Gamepad.rightXAxis(axis(RX));
   Gamepad.rightYAxis(axis(RY));
 
-  // dPad（手動のみ） ※マクロ対象外
   Gamepad.dPad(
     !digitalRead(UP),
     !digitalRead(DOWN),
     !digitalRead(LEFT),
     !digitalRead(RIGHT)
   );
-
 
   Gamepad.buttons(merged);
   Gamepad.loop();
