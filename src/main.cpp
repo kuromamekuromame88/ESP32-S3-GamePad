@@ -1,4 +1,5 @@
-// 変更点の説明は下に書きます（まずはコード）
+//（全体差し替えOK）
+
 #include <Arduino.h>
 #include "switch_ESP32.h"
 
@@ -35,13 +36,14 @@ uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
 
-// ===== マクロ =====
+// ===== マクロ用 =====
 String macro="";
 bool recording=false;
 bool playing=false;
 unsigned long lastChange=0;
 uint16_t lastState=0;
 unsigned long pressTime=0;
+uint16_t macroButtons=0;
 
 uint16_t readButtons(){
   uint16_t s=0;
@@ -67,21 +69,6 @@ uint16_t readButtons(){
 void recordState(uint16_t s){
   macro+=String(s)+","+String(millis()-lastChange)+",";
   lastChange=millis();
-}
-
-void applyButtons(uint16_t s){
-  if(s&(1<<0)) Gamepad.press(NSButton_A);
-  if(s&(1<<1)) Gamepad.press(NSButton_B);
-  if(s&(1<<2)) Gamepad.press(NSButton_X);
-  if(s&(1<<3)) Gamepad.press(NSButton_Y);
-  if(s&(1<<4)) Gamepad.press(NSButton_LeftThrottle);
-  if(s&(1<<5)) Gamepad.press(NSButton_RightThrottle);
-  if(s&(1<<6)) Gamepad.press(NSButton_LeftTrigger);
-  if(s&(1<<7)) Gamepad.press(NSButton_RightTrigger);
-  if(s&(1<<8)) Gamepad.press(NSButton_Plus);
-  if(s&(1<<9)) Gamepad.press(NSButton_Minus);
-  if(s&(1<<10)) Gamepad.press(NSButton_LeftStick);
-  if(s&(1<<11)) Gamepad.press(NSButton_RightStick);
 }
 
 void setup(){
@@ -114,45 +101,38 @@ void loop(){
     pressTime=0;
   }
 
-  uint16_t now=readButtons();
-  if(recording && now!=lastState){
+  uint16_t manual=readButtons();
+  if(recording && manual!=lastState){
     recordState(lastState);
-    lastState=now;
+    lastState=manual;
   }
 
-  // ==== 再生 ====
+  // ==== 再生処理（macroButtons更新のみ）====
   static int idx=0;
   static unsigned long wait=0;
 
-  if(playing){
-    if(millis()>wait){
-      int c1=macro.indexOf(",",idx);
-      if(c1==-1){playing=false;idx=0;return;}
-      uint16_t s=macro.substring(idx,c1).toInt();
+  if(playing && millis()>wait){
+    int c1=macro.indexOf(",",idx);
+    if(c1==-1){playing=false;idx=0;macroButtons=0;}
+    else{
+      macroButtons=macro.substring(idx,c1).toInt();
       idx=c1+1;
       int c2=macro.indexOf(",",idx);
       int d=macro.substring(idx,c2).toInt();
       idx=c2+1;
-
-      Gamepad.releaseAll();
-      applyButtons(s);
       wait=millis()+d;
     }
   }
 
-  // ==== 通常入力（再生中は完全停止）====
-  if(!playing){
-    Gamepad.releaseAll();
+  uint16_t merged = manual | macroButtons;
 
-    Gamepad.leftXAxis(255-axis(LX));
-    Gamepad.leftYAxis(255-axis(LY));
-    Gamepad.rightXAxis(axis(RX));
-    Gamepad.rightYAxis(axis(RY));
+  // ==== 軸は常に手動優先 ====
+  Gamepad.leftXAxis(255-axis(LX));
+  Gamepad.leftYAxis(255-axis(LY));
+  Gamepad.rightXAxis(axis(RX));
+  Gamepad.rightYAxis(axis(RY));
 
-    Gamepad.dPad(!digitalRead(UP),!digitalRead(DOWN),!digitalRead(LEFT),!digitalRead(RIGHT));
-    applyButtons(now);
-  }
-
+  Gamepad.buttons(merged);
   Gamepad.loop();
   delay(5);
 }
