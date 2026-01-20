@@ -1,9 +1,12 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "switch_ESP32.h"
+#include "USB.h"
+#include "USBHID.h"
 
 Preferences prefs;
 NSGamepad Gamepad;
+USBHID HID;
 
 // ================= モード =================
 enum ControllerMode {
@@ -119,7 +122,7 @@ void setup(){
   if(mode==MODE_SWITCH){
     Gamepad.begin();
   }else{
-    USBHID.begin();   // Generic HID
+    HID.begin();   // ← ★ 修正点
   }
 
   USB.begin();
@@ -128,7 +131,6 @@ void setup(){
 // ================= loop =================
 void loop(){
 
-  // ==== マクロ/連打ボタン判定 ====
   uint16_t manual = readButtons();
 
   if(!digitalRead(MStart1)){
@@ -161,7 +163,6 @@ void loop(){
     lastState=manual;
   }
 
-  // ==== マクロ再生 ====
   static int idx=0;
   static unsigned long wait=0;
 
@@ -181,7 +182,6 @@ void loop(){
     }
   }
 
-  // ==== 連打 ====
   if(turbo){
     if((millis()/80)%2==0){
       macroButtons = manual;
@@ -192,13 +192,11 @@ void loop(){
 
   uint16_t merged = manual | macroButtons;
 
-  // ==== 軸 ====
   Gamepad.leftXAxis(255-axis(LX));
   Gamepad.leftYAxis(255-axis(LY));
   Gamepad.rightXAxis(axis(RX));
   Gamepad.rightYAxis(axis(RY));
 
-  // ==== HAT（手動のみ）====
   Gamepad.dPad(
     !digitalRead(UP),
     !digitalRead(DOWN),
@@ -206,12 +204,11 @@ void loop(){
     !digitalRead(RIGHT)
   );
 
-  // ==== 出力 ====
   if(mode==MODE_SWITCH){
     Gamepad.buttons(merged);
     Gamepad.loop();
   }else{
-    // Generic HID送信（後で差し替え）
+    // Generic HID送信（今後ここを実装）
   }
 
   delay(5);
