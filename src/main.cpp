@@ -61,6 +61,20 @@ uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
 
+// ================== BLE差分同期 ==================
+uint16_t prevBleButtons = 0;
+
+void syncBleButtons(uint16_t now){
+  for(int i = 0; i < 16; i++){
+    bool n = now & (1 << i);
+    bool p = prevBleButtons & (1 << i);
+
+    if(n && !p) bleGamepad.press(i + 1);
+    if(!n && p) bleGamepad.release(i + 1);
+  }
+  prevBleButtons = now;
+}
+
 // ================== ボタン取得（NS互換） ==================
 uint16_t readButtons(){
   uint16_t s = 0;
@@ -129,7 +143,7 @@ void loop(){
 
   uint16_t manual = readButtons();
 
-  // ---- MStart 処理 ----
+  // ---- MStart ----
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime = millis();
   }else if(pressTime){
@@ -157,13 +171,9 @@ void loop(){
 
   // ---- A連打 ----
   static bool rapidState=false;
-  if(rapidA){
-    if(millis() - lastRapid > 40){
-      rapidState = !rapidState;
-      lastRapid = millis();
-    }
-  }else{
-    rapidState = false;
+  if(rapidA && millis() - lastRapid > 40){
+    rapidState = !rapidState;
+    lastRapid = millis();
   }
 
   if(rapidState) manual |=  (1 << NSButton_A);
@@ -223,13 +233,15 @@ void loop(){
     bleGamepad.setLeftThumb(lx, ly);
     bleGamepad.setRightThumb(rx, ry);
 
-    bleGamepad.setButtons(merged);
+    syncBleButtons(merged);
 
-    if(!digitalRead(UP))       bleGamepad.setHat(HAT_UP);
+    if(!digitalRead(UP))         bleGamepad.setHat(HAT_UP);
     else if(!digitalRead(RIGHT)) bleGamepad.setHat(HAT_RIGHT);
     else if(!digitalRead(DOWN))  bleGamepad.setHat(HAT_DOWN);
     else if(!digitalRead(LEFT))  bleGamepad.setHat(HAT_LEFT);
     else                         bleGamepad.setHat(HAT_CENTERED);
+
+    bleGamepad.sendReport();
   }
 
   delay(5);
