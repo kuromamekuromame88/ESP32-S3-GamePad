@@ -55,6 +55,11 @@ int8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, -127, 127);
 }
 
+uint8_t Saxis(int pin){
+  return map(analogRead(pin), 0, 4095, 0, 255);
+}
+
+
 // =====================
 // マクロ
 // =====================
@@ -240,10 +245,10 @@ void loop(){
   // Switch HID
   // =====================
   else{
-    SwitchGamepad.leftXAxis(255 - map(axis(LX), -127, 127, 0, 255));
-    SwitchGamepad.leftYAxis(255 - map(axis(LY), -127, 127, 0, 255));
-    SwitchGamepad.rightXAxis(map(axis(RX), -127, 127, 0, 255));
-    SwitchGamepad.rightYAxis(map(axis(RY), -127, 127, 0, 255));
+    SwitchGamepad.leftXAxis(255 - Saxis(LX));
+    SwitchGamepad.leftYAxis(255 - Saxis(LY));
+    SwitchGamepad.rightXAxis(Saxis(RX));
+    SwitchGamepad.rightYAxis(Saxis(RY));
 
     SwitchGamepad.dPad(
       !digitalRead(UP),
