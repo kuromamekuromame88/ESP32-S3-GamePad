@@ -1,11 +1,25 @@
 #include <Arduino.h>
 #include <Preferences.h>
+
+#include "USBHIDGamepad.h"
 #include "switch_ESP32.h"
 
-NSGamepad Gamepad;
+// =====================
+// HID インスタンス
+// =====================
+USBHIDGamepad USBGamepad;
+NSGamepad      SwitchGamepad;
+
 Preferences prefs;
 
-// ===== ピン定義 =====
+// =====================
+// モード判定
+// =====================
+bool usbMode = false;
+
+// =====================
+// ピン定義
+// =====================
 #define MStart1 42
 
 #define LX 18
@@ -34,12 +48,16 @@ Preferences prefs;
 #define BTN_X 7
 #define BTN_Y 6
 
-// ===== スティック変換 =====
+// =====================
+// スティック
+// =====================
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
 
-// ===== マクロ用 =====
+// =====================
+// マクロ
+// =====================
 String macro = "";
 bool recording = false;
 bool playing   = false;
@@ -50,7 +68,9 @@ unsigned long pressTime  = 0;
 uint16_t lastState     = 0;
 uint16_t macroButtons = 0;
 
-// ===== ボタン読み取り =====
+// =====================
+// ボタン取得
+// =====================
 uint16_t readButtons(){
   uint16_t s = 0;
 
@@ -74,7 +94,9 @@ uint16_t readButtons(){
   return s;
 }
 
-// ===== マクロ記録 =====
+// =====================
+// マクロ保存
+// =====================
 void recordState(uint16_t s){
   macro += String(s) + "," + String(millis() - lastChange) + ",";
   lastChange = millis();
@@ -92,8 +114,11 @@ void loadMacro(){
   prefs.end();
 }
 
-// ===== setup =====
+// =====================
+// setup
+// =====================
 void setup(){
+
   int pins[] = {
     MStart1, LB, RB,
     UP, RIGHT, DOWN, LEFT,
@@ -105,18 +130,30 @@ void setup(){
   for(int p : pins) pinMode(p, INPUT_PULLUP);
 
   analogReadResolution(12);
+
+  // ==== HID モード判定 ====
+  delay(10); // 安定待ち
+  usbMode = !digitalRead(PLUS); // 押されていたら USB HID
+
   loadMacro();
 
-  Gamepad.begin();
-  USB.begin();
+  if(usbMode){
+    USBGamepad.begin();
+    USB.begin();
+  }else{
+    SwitchGamepad.begin();
+    USB.begin();
+  }
 }
 
-// ===== loop =====
+// =====================
+// loop
+// =====================
 void loop(){
 
   uint16_t manual = readButtons();
 
-  // ==== MStart 判定 ====
+  // ==== MStart ====
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime = millis();
   }
@@ -124,7 +161,6 @@ void loop(){
     unsigned long held = millis() - pressTime;
 
     if(held > 1000){
-      // 録画トグル
       recording = !recording;
       if(recording){
         macro = "";
@@ -135,7 +171,6 @@ void loop(){
         saveMacro();
       }
     }else{
-      // マクロ再生
       if(macro.length() > 0){
         playing = true;
       }
@@ -143,13 +178,13 @@ void loop(){
     pressTime = 0;
   }
 
-  // ==== 録画処理 ====
+  // ==== 録画 ====
   if(recording && manual != lastState){
     recordState(lastState);
     lastState = manual;
   }
 
-  // ==== マクロ再生 ====
+  // ==== 再生 ====
   static int idx = 0;
   static unsigned long waitUntil = 0;
 
@@ -164,33 +199,50 @@ void loop(){
       idx = c1 + 1;
 
       int c2 = macro.indexOf(",", idx);
-      int delayMs = macro.substring(idx, c2).toInt();
+      int d = macro.substring(idx, c2).toInt();
       idx = c2 + 1;
 
-      waitUntil = millis() + delayMs;
+      waitUntil = millis() + d;
     }
   }
 
-  // ==== 手動 + マクロ合成 ====
   uint16_t merged = manual | macroButtons;
 
-  // ==== スティック ====
-  Gamepad.leftXAxis(255 - axis(LX));
-  Gamepad.leftYAxis(255 - axis(LY));
-  Gamepad.rightXAxis(axis(RX));
-  Gamepad.rightYAxis(axis(RY));
+  // =====================
+  // 出力（モード別）
+  // =====================
+  if(usbMode){
+    USBGamepad.setAxes(
+      axis(LX), axis(LY),
+      axis(RX), axis(RY)
+    );
 
-  // ==== DPad ====
-  Gamepad.dPad(
-    !digitalRead(UP),
-    !digitalRead(DOWN),
-    !digitalRead(LEFT),
-    !digitalRead(RIGHT)
-  );
+    USBGamepad.setHat(
+      (!digitalRead(UP))    ? 0 :
+      (!digitalRead(RIGHT)) ? 2 :
+      (!digitalRead(DOWN))  ? 4 :
+      (!digitalRead(LEFT))  ? 6 : -1
+    );
 
-  // ==== ボタン送信 ====
-  Gamepad.buttons(merged);
-  Gamepad.loop();
+    USBGamepad.setButtons(merged);
+    USBGamepad.send();
+  }
+  else{
+    SwitchGamepad.leftXAxis(255 - axis(LX));
+    SwitchGamepad.leftYAxis(255 - axis(LY));
+    SwitchGamepad.rightXAxis(axis(RX));
+    SwitchGamepad.rightYAxis(axis(RY));
+
+    SwitchGamepad.dPad(
+      !digitalRead(UP),
+      !digitalRead(DOWN),
+      !digitalRead(LEFT),
+      !digitalRead(RIGHT)
+    );
+
+    SwitchGamepad.buttons(merged);
+    SwitchGamepad.loop();
+  }
 
   delay(5);
 }
