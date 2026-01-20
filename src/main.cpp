@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#include "USB.h"
 #include "USBHIDGamepad.h"
 #include "switch_ESP32.h"
 
@@ -52,8 +51,8 @@ bool usbMode = false;
 // =====================
 // スティック
 // =====================
-uint8_t axis(int pin){
-  return map(analogRead(pin), 0, 4095, 0, 255);
+int8_t axis(int pin){
+  return map(analogRead(pin), 0, 4095, -127, 127);
 }
 
 // =====================
@@ -70,7 +69,7 @@ uint16_t lastState     = 0;
 uint16_t macroButtons = 0;
 
 // =====================
-// ボタン取得
+// ボタン取得（Switch基準）
 // =====================
 uint16_t readButtons(){
   uint16_t s = 0;
@@ -132,9 +131,8 @@ void setup(){
 
   analogReadResolution(12);
 
-  // ==== HID モード判定 ====
-  delay(10); // 安定待ち
-  usbMode = !digitalRead(PLUS); // 押されていたら USB HID
+  delay(10);
+  usbMode = !digitalRead(PLUS); // 起動時 PLUS 押下 → USBHID
 
   loadMacro();
 
@@ -210,29 +208,42 @@ void loop(){
   uint16_t merged = manual | macroButtons;
 
   // =====================
-  // 出力（モード別）
+  // USB HID
   // =====================
   if(usbMode){
-    USBGamepad.setAxes(
+
+    USBGamepad.send(
       axis(LX), axis(LY),
-      axis(RX), axis(RY)
+      axis(RX), axis(RY),
+      0, 0,
+      (!digitalRead(UP))    ? HAT_UP :
+      (!digitalRead(RIGHT)) ? HAT_RIGHT :
+      (!digitalRead(DOWN))  ? HAT_DOWN :
+      (!digitalRead(LEFT))  ? HAT_LEFT :
+                              HAT_CENTER,
+      // buttons
+      ((merged & (1<<NSButton_A)) ? (1<<BUTTON_SOUTH) : 0) |
+      ((merged & (1<<NSButton_B)) ? (1<<BUTTON_EAST ) : 0) |
+      ((merged & (1<<NSButton_X)) ? (1<<BUTTON_NORTH) : 0) |
+      ((merged & (1<<NSButton_Y)) ? (1<<BUTTON_WEST ) : 0) |
+      ((merged & (1<<NSButton_LeftThrottle )) ? (1<<BUTTON_TL ) : 0) |
+      ((merged & (1<<NSButton_RightThrottle)) ? (1<<BUTTON_TR ) : 0) |
+      ((merged & (1<<NSButton_LeftTrigger )) ? (1<<BUTTON_TL2) : 0) |
+      ((merged & (1<<NSButton_RightTrigger)) ? (1<<BUTTON_TR2) : 0) |
+      ((merged & (1<<NSButton_Plus )) ? (1<<BUTTON_START ) : 0) |
+      ((merged & (1<<NSButton_Minus)) ? (1<<BUTTON_SELECT) : 0) |
+      ((merged & (1<<NSButton_LeftStick )) ? (1<<BUTTON_THUMBL) : 0) |
+      ((merged & (1<<NSButton_RightStick)) ? (1<<BUTTON_THUMBR) : 0)
     );
-
-    USBGamepad.setHat(
-      (!digitalRead(UP))    ? 0 :
-      (!digitalRead(RIGHT)) ? 2 :
-      (!digitalRead(DOWN))  ? 4 :
-      (!digitalRead(LEFT))  ? 6 : -1
-    );
-
-    USBGamepad.setButtons(merged);
-    USBGamepad.send();
   }
+  // =====================
+  // Switch HID
+  // =====================
   else{
-    SwitchGamepad.leftXAxis(255 - axis(LX));
-    SwitchGamepad.leftYAxis(255 - axis(LY));
-    SwitchGamepad.rightXAxis(axis(RX));
-    SwitchGamepad.rightYAxis(axis(RY));
+    SwitchGamepad.leftXAxis(255 - map(axis(LX), -127, 127, 0, 255));
+    SwitchGamepad.leftYAxis(255 - map(axis(LY), -127, 127, 0, 255));
+    SwitchGamepad.rightXAxis(map(axis(RX), -127, 127, 0, 255));
+    SwitchGamepad.rightYAxis(map(axis(RY), -127, 127, 0, 255));
 
     SwitchGamepad.dPad(
       !digitalRead(UP),
