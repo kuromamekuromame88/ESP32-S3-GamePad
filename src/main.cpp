@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include "USB.h"
 #include "USBHIDGamepad.h"
 #include "switch_ESP32.h"
 
