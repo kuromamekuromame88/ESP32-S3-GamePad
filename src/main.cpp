@@ -1,19 +1,21 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "switch_ESP32.h"
-#include "USB.h"
-#include "USBHID.h"
+#include <Adafruit_TinyUSB.h>
 
-Preferences prefs;
 NSGamepad Gamepad;
-USBHID HID;
+Preferences prefs;
+
+// ================= TinyUSB =================
+Adafruit_USBD_HID usb_hid;
+hid_gamepad_report_t hidReport;
 
 // ================= モード =================
-enum ControllerMode {
+enum Mode {
   MODE_SWITCH,
-  MODE_GENERIC_HID
+  MODE_GENERIC
 };
-ControllerMode mode = MODE_SWITCH;
+Mode mode = MODE_SWITCH;
 
 // ================= ピン定義 =================
 #define MStart1 42
@@ -53,72 +55,80 @@ uint8_t axis(int pin){
 String macro="";
 bool recording=false;
 bool playing=false;
-bool turbo=false;
+bool rapidA=false;
 
+unsigned long lastRapid=0;
 unsigned long lastChange=0;
 uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
 
-// ================= ボタン読み取り（論理状態） =================
+// ================= ボタン読み取り（Switch基準） =================
 uint16_t readButtons(){
-  uint16_t s=0;
+  uint16_t s = 0;
 
-  if(!digitalRead(BTN_A)) s |= 1<<0; // Button1
-  if(!digitalRead(BTN_B)) s |= 1<<1; // Button2
-  if(!digitalRead(BTN_X)) s |= 1<<2; // Button3
-  if(!digitalRead(BTN_Y)) s |= 1<<3; // Button4
+  if(!digitalRead(BTN_Y)) s |= 1 << NSButton_Y;
+  if(!digitalRead(BTN_B)) s |= 1 << NSButton_B;
+  if(!digitalRead(BTN_A)) s |= 1 << NSButton_A;
+  if(!digitalRead(BTN_X)) s |= 1 << NSButton_X;
 
-  if(!digitalRead(L))  s |= 1<<4;    // Button5
-  if(!digitalRead(R))  s |= 1<<5;    // Button6
-  if(!digitalRead(ZL)) s |= 1<<6;    // Button7
-  if(!digitalRead(ZR)) s |= 1<<7;    // Button8
+  if(!digitalRead(ZL)) s |= 1 << NSButton_LeftTrigger;
+  if(!digitalRead(ZR)) s |= 1 << NSButton_RightTrigger;
 
-  if(!digitalRead(MINUS)) s |= 1<<8; // Button9
-  if(!digitalRead(PLUS))  s |= 1<<9; // Button10
+  if(!digitalRead(L))  s |= 1 << NSButton_LeftThrottle;
+  if(!digitalRead(R))  s |= 1 << NSButton_RightThrottle;
 
-  if(!digitalRead(LB)) s |= 1<<10;   // Button11
-  if(!digitalRead(RB)) s |= 1<<11;   // Button12
+  if(!digitalRead(MINUS)) s |= 1 << NSButton_Minus;
+  if(!digitalRead(PLUS))  s |= 1 << NSButton_Plus;
+
+  if(!digitalRead(LB)) s |= 1 << NSButton_LeftStick;
+  if(!digitalRead(RB)) s |= 1 << NSButton_RightStick;
 
   return s;
 }
 
-// ================= HAT =================
+// ================= マクロ保存 =================
+void recordState(uint16_t s){
+  macro += String(s) + "," + String(millis() - lastChange) + ",";
+  lastChange = millis();
+}
+
+void saveMacro(){
+  prefs.begin("macro", false);
+  prefs.putString("data", macro);
+  prefs.end();
+}
+
+void loadMacro(){
+  prefs.begin("macro", true);
+  macro = prefs.getString("data", "");
+  prefs.end();
+}
+
+// ================= HAT計算（TinyUSB） =================
 uint8_t calcHat(){
   bool u=!digitalRead(UP);
   bool d=!digitalRead(DOWN);
   bool l=!digitalRead(LEFT);
   bool r=!digitalRead(RIGHT);
 
-  if(u && r) return 1;
-  if(r && d) return 3;
-  if(d && l) return 5;
-  if(l && u) return 7;
-  if(u) return 0;
-  if(r) return 2;
-  if(d) return 4;
-  if(l) return 6;
-  return 8;
+  if(u && r) return GAMEPAD_HAT_UP_RIGHT;
+  if(r && d) return GAMEPAD_HAT_DOWN_RIGHT;
+  if(d && l) return GAMEPAD_HAT_DOWN_LEFT;
+  if(l && u) return GAMEPAD_HAT_UP_LEFT;
+  if(u) return GAMEPAD_HAT_UP;
+  if(r) return GAMEPAD_HAT_RIGHT;
+  if(d) return GAMEPAD_HAT_DOWN;
+  if(l) return GAMEPAD_HAT_LEFT;
+  return GAMEPAD_HAT_CENTERED;
 }
-
-// ================= HID Report =================
-typedef struct __attribute__((packed)){
-  uint16_t buttons;   // Button 1〜16
-  uint8_t hat;        // 0〜7, 8=neutral
-  uint8_t x;
-  uint8_t y;
-  uint8_t z;
-  uint8_t rz;
-} HIDReport;
-
-HIDReport hidReport;
 
 // ================= モード判定 =================
 void detectMode(){
   pinMode(PLUS, INPUT_PULLUP);
   delay(10);
   if(!digitalRead(PLUS)){
-    mode = MODE_GENERIC_HID;
+    mode = MODE_GENERIC;
   }
 }
 
@@ -128,28 +138,96 @@ void setup(){
   for(int p:pins) pinMode(p,INPUT_PULLUP);
 
   analogReadResolution(12);
+  loadMacro();
   detectMode();
 
-  if(mode==MODE_SWITCH){
+  if(mode == MODE_SWITCH){
     Gamepad.begin();
   }else{
-    HID.begin();
+    usb_hid.begin();
   }
+
   USB.begin();
 }
 
 // ================= loop =================
 void loop(){
-
   uint16_t manual = readButtons();
-  uint16_t merged = manual;
 
-  uint8_t lx=255-axis(LX);
-  uint8_t ly=255-axis(LY);
-  uint8_t rx=axis(RX);
-  uint8_t ry=axis(RY);
+  // ---- MStart 判定 ----
+  if(!digitalRead(MStart1)){
+    if(!pressTime) pressTime=millis();
+  }else if(pressTime){
+    unsigned long held = millis()-pressTime;
 
-  if(mode==MODE_SWITCH){
+    if(held > 1000){
+      recording = !recording;
+      if(recording){
+        macro="";
+        lastState=manual;
+        lastChange=millis();
+      }else{
+        recordState(manual);
+        saveMacro();
+      }
+    }else{
+      if(manual & (1<<NSButton_A)){
+        rapidA = true;
+      }else if(macro.length()>0){
+        playing = true;
+      }
+    }
+    pressTime = 0;
+  }
+
+  // ---- A連打 ----
+  static bool rapidState=false;
+  if(rapidA){
+    if(millis()-lastRapid > 40){
+      rapidState=!rapidState;
+      lastRapid=millis();
+    }
+    if(digitalRead(MStart1)) rapidA=false;
+  }
+
+  if(rapidState) manual |= (1<<NSButton_A);
+  else manual &= ~(1<<NSButton_A);
+
+  // ---- 録画 ----
+  if(recording && manual!=lastState){
+    recordState(lastState);
+    lastState=manual;
+  }
+
+  // ---- マクロ再生 ----
+  static int idx=0;
+  static unsigned long wait=0;
+
+  if(playing && millis()>wait){
+    int c1=macro.indexOf(",",idx);
+    if(c1==-1){
+      playing=false;
+      idx=0;
+      macroButtons=0;
+    }else{
+      macroButtons=macro.substring(idx,c1).toInt();
+      idx=c1+1;
+      int c2=macro.indexOf(",",idx);
+      int d=macro.substring(idx,c2).toInt();
+      idx=c2+1;
+      wait=millis()+d;
+    }
+  }
+
+  uint16_t merged = manual | macroButtons;
+
+  uint8_t lx = 255-axis(LX);
+  uint8_t ly = 255-axis(LY);
+  uint8_t rx = axis(RX);
+  uint8_t ry = axis(RY);
+
+  // ================= 出力 =================
+  if(mode == MODE_SWITCH){
     Gamepad.leftXAxis(lx);
     Gamepad.leftYAxis(ly);
     Gamepad.rightXAxis(rx);
@@ -165,14 +243,17 @@ void loop(){
     Gamepad.buttons(merged);
     Gamepad.loop();
   }else{
-    hidReport.buttons = merged;
-    hidReport.hat = calcHat();
-    hidReport.x = lx;
-    hidReport.y = ly;
-    hidReport.z = rx;
-    hidReport.rz = ry;
+    memset(&hidReport, 0, sizeof(hidReport));
 
-    HID.SendReport(1, &hidReport, sizeof(hidReport));
+    hidReport.x  = lx;
+    hidReport.y  = ly;
+    hidReport.z  = rx;
+    hidReport.rz = ry;
+    hidReport.hat = calcHat();
+
+    hidReport.buttons = merged; // TinyUSB側が正しく解釈
+
+    usb_hid.sendReport(0, &hidReport, sizeof(hidReport));
   }
 
   delay(5);
