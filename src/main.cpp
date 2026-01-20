@@ -31,10 +31,10 @@ ControllerMode mode = MODE_SWITCH;
 #define DOWN 10
 #define LEFT 11
 
-#define ZL 2
-#define ZR 1
-#define L 35
-#define R 36
+#define ZL 35
+#define ZR 36
+#define L 2
+#define R 1
 
 #define PLUS 38
 #define MINUS 37
@@ -44,7 +44,7 @@ ControllerMode mode = MODE_SWITCH;
 #define BTN_X 7
 #define BTN_Y 6
 
-// ================= 共通 =================
+// ================= ユーティリティ =================
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
@@ -64,21 +64,21 @@ uint16_t macroButtons=0;
 uint16_t readButtons(){
   uint16_t s=0;
 
-  if(!digitalRead(BTN_Y)) s|=1<<NSButton_Y;
-  if(!digitalRead(BTN_B)) s|=1<<NSButton_B;
-  if(!digitalRead(BTN_A)) s|=1<<NSButton_A;
-  if(!digitalRead(BTN_X)) s|=1<<NSButton_X;
+  if(!digitalRead(BTN_Y)) s|=1<<0;
+  if(!digitalRead(BTN_B)) s|=1<<1;
+  if(!digitalRead(BTN_A)) s|=1<<2;
+  if(!digitalRead(BTN_X)) s|=1<<3;
 
-  if(!digitalRead(ZL)) s|=1<<NSButton_LeftTrigger;
-  if(!digitalRead(ZR)) s|=1<<NSButton_RightTrigger;
-  if(!digitalRead(L))  s|=1<<NSButton_LeftThrottle;
-  if(!digitalRead(R))  s|=1<<NSButton_RightThrottle;
+  if(!digitalRead(ZL)) s|=1<<4;
+  if(!digitalRead(ZR)) s|=1<<5;
+  if(!digitalRead(L))  s|=1<<6;
+  if(!digitalRead(R))  s|=1<<7;
 
-  if(!digitalRead(MINUS)) s|=1<<NSButton_Minus;
-  if(!digitalRead(PLUS))  s|=1<<NSButton_Plus;
+  if(!digitalRead(MINUS)) s|=1<<8;
+  if(!digitalRead(PLUS))  s|=1<<9;
 
-  if(!digitalRead(LB)) s|=1<<NSButton_LeftStick;
-  if(!digitalRead(RB)) s|=1<<NSButton_RightStick;
+  if(!digitalRead(LB)) s|=1<<10;
+  if(!digitalRead(RB)) s|=1<<11;
 
   return s;
 }
@@ -95,7 +95,6 @@ void loadMacro(){
   prefs.end();
 }
 
-// ================= マクロ記録 =================
 void recordState(uint16_t s){
   macro+=String(s)+","+String(millis()-lastChange)+",";
   lastChange=millis();
@@ -110,6 +109,36 @@ void detectMode(){
   }
 }
 
+// ================= Generic HID Report =================
+typedef struct __attribute__((packed)){
+  uint16_t buttons;
+  uint8_t x;
+  uint8_t y;
+  uint8_t z;
+  uint8_t rz;
+  uint8_t hat;
+} HIDReport;
+
+HIDReport hidReport;
+
+// ================= HAT計算 =================
+uint8_t calcHat(){
+  bool u=!digitalRead(UP);
+  bool d=!digitalRead(DOWN);
+  bool l=!digitalRead(LEFT);
+  bool r=!digitalRead(RIGHT);
+
+  if(u && r) return 1;
+  if(r && d) return 3;
+  if(d && l) return 5;
+  if(l && u) return 7;
+  if(u) return 0;
+  if(r) return 2;
+  if(d) return 4;
+  if(l) return 6;
+  return 8; // neutral
+}
+
 // ================= setup =================
 void setup(){
   int pins[]={MStart1,LB,RB,UP,RIGHT,DOWN,LEFT,ZL,ZR,L,R,PLUS,MINUS,BTN_A,BTN_B,BTN_X,BTN_Y};
@@ -122,17 +151,17 @@ void setup(){
   if(mode==MODE_SWITCH){
     Gamepad.begin();
   }else{
-    HID.begin();   // ← ★ 修正点
+    HID.begin();
   }
-
   USB.begin();
 }
 
 // ================= loop =================
 void loop(){
 
-  uint16_t manual = readButtons();
+  uint16_t manual=readButtons();
 
+  // ---- マクロ制御 ----
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime=millis();
   }else if(pressTime){
@@ -183,32 +212,41 @@ void loop(){
   }
 
   if(turbo){
-    if((millis()/80)%2==0){
-      macroButtons = manual;
-    }else{
-      macroButtons = 0;
-    }
+    macroButtons = ((millis()/80)%2)?0:manual;
   }
 
   uint16_t merged = manual | macroButtons;
 
-  Gamepad.leftXAxis(255-axis(LX));
-  Gamepad.leftYAxis(255-axis(LY));
-  Gamepad.rightXAxis(axis(RX));
-  Gamepad.rightYAxis(axis(RY));
-
-  Gamepad.dPad(
-    !digitalRead(UP),
-    !digitalRead(DOWN),
-    !digitalRead(LEFT),
-    !digitalRead(RIGHT)
-  );
+  // ---- 軸 ----
+  uint8_t lx=255-axis(LX);
+  uint8_t ly=255-axis(LY);
+  uint8_t rx=axis(RX);
+  uint8_t ry=axis(RY);
 
   if(mode==MODE_SWITCH){
+    Gamepad.leftXAxis(lx);
+    Gamepad.leftYAxis(ly);
+    Gamepad.rightXAxis(rx);
+    Gamepad.rightYAxis(ry);
+
+    Gamepad.dPad(
+      !digitalRead(UP),
+      !digitalRead(DOWN),
+      !digitalRead(LEFT),
+      !digitalRead(RIGHT)
+    );
+
     Gamepad.buttons(merged);
     Gamepad.loop();
   }else{
-    // Generic HID送信（今後ここを実装）
+    hidReport.buttons = merged;
+    hidReport.x = lx;
+    hidReport.y = ly;
+    hidReport.z = rx;
+    hidReport.rz = ry;
+    hidReport.hat = calcHat();
+
+    HID.SendReport(1, &hidReport, sizeof(hidReport));
   }
 
   delay(5);
