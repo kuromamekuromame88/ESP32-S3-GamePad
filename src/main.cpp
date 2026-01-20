@@ -1,22 +1,11 @@
 #include <Arduino.h>
 #include <Preferences.h>
-#include <USB.h>
-#include <USBHIDGamepad.h>
 #include "switch_ESP32.h"
 
-// ================== インスタンス ==================
-NSGamepad      SwitchGamepad;
-USBHIDGamepad  USBGamepad;
+NSGamepad Gamepad;
 Preferences prefs;
 
-// ================== モード ==================
-enum Mode {
-  MODE_SWITCH,
-  MODE_USBHID
-};
-Mode mode = MODE_SWITCH;
-
-// ================== ピン定義 ==================
+// ===== ピン定義 =====
 #define MStart1 42
 
 #define LX 18
@@ -45,27 +34,24 @@ Mode mode = MODE_SWITCH;
 #define BTN_X 7
 #define BTN_Y 6
 
-// ================== スティック変換 ==================
-uint8_t axisSwitch(int pin){
+// ===== スティック変換 =====
+uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
 
-int8_t axisUSB(int pin){
-  return map(analogRead(pin), 0, 4095, -127, 127);
-}
+// ===== マクロ用 =====
+String macro = "";
+bool recording = false;
+bool playing   = false;
 
-// ================== マクロ用 ==================
-String macro="";
-bool recording=false;
-bool playing=false;
+unsigned long lastChange = 0;
+unsigned long pressTime  = 0;
 
-unsigned long lastChange=0;
-uint16_t lastState=0;
-unsigned long pressTime=0;
-uint16_t macroButtons=0;
+uint16_t lastState     = 0;
+uint16_t macroButtons = 0;
 
-// ================== Switch用ボタン取得 ==================
-uint16_t readButtonsSwitch(){
+// ===== ボタン読み取り =====
+uint16_t readButtons(){
   uint16_t s = 0;
 
   if(!digitalRead(BTN_Y)) s |= 1 << NSButton_Y;
@@ -88,28 +74,7 @@ uint16_t readButtonsSwitch(){
   return s;
 }
 
-// ================== USBHID用ボタン取得 ==================
-uint32_t readButtonsUSB(){
-  uint32_t b = 0;
-
-  if(!digitalRead(BTN_A)) b |= 1 << BUTTON_A;
-  if(!digitalRead(BTN_B)) b |= 1 << BUTTON_B;
-  if(!digitalRead(BTN_X)) b |= 1 << BUTTON_X;
-  if(!digitalRead(BTN_Y)) b |= 1 << BUTTON_Y;
-
-  if(!digitalRead(LB))    b |= 1 << BUTTON_TL;
-  if(!digitalRead(RB))    b |= 1 << BUTTON_TR;
-
-  if(!digitalRead(ZL))    b |= 1 << BUTTON_TL2;
-  if(!digitalRead(ZR))    b |= 1 << BUTTON_TR2;
-
-  if(!digitalRead(MINUS)) b |= 1 << BUTTON_SELECT;
-  if(!digitalRead(PLUS))  b |= 1 << BUTTON_START;
-
-  return b;
-}
-
-// ================== マクロ保存 ==================
+// ===== マクロ記録 =====
 void recordState(uint16_t s){
   macro += String(s) + "," + String(millis() - lastChange) + ",";
   lastChange = millis();
@@ -127,110 +92,105 @@ void loadMacro(){
   prefs.end();
 }
 
-// ================== セットアップ ==================
+// ===== setup =====
 void setup(){
   int pins[] = {
-    MStart1, LB, RB, UP, RIGHT, DOWN, LEFT,
-    ZL, ZR, L, R, PLUS, MINUS,
+    MStart1, LB, RB,
+    UP, RIGHT, DOWN, LEFT,
+    ZL, ZR, L, R,
+    PLUS, MINUS,
     BTN_A, BTN_B, BTN_X, BTN_Y
   };
+
   for(int p : pins) pinMode(p, INPUT_PULLUP);
 
   analogReadResolution(12);
   loadMacro();
 
-  delay(10);
-
-  // 起動時 PLUS 判定
-  if(!digitalRead(PLUS)){
-    mode = MODE_USBHID;
-  }else{
-    mode = MODE_SWITCH;
-  }
-
-  if(mode == MODE_SWITCH){
-    SwitchGamepad.begin();
-    USB.begin();
-  }else{
-    USBGamepad.begin();
-    USB.begin();
-  }
+  Gamepad.begin();
+  USB.begin();
 }
 
-// ================== メインループ ==================
+// ===== loop =====
 void loop(){
 
-  // ===== 共通 =====
+  uint16_t manual = readButtons();
+
+  // ==== MStart 判定 ====
   if(!digitalRead(MStart1)){
     if(!pressTime) pressTime = millis();
-  }else if(pressTime){
+  }
+  else if(pressTime){
     unsigned long held = millis() - pressTime;
 
     if(held > 1000){
+      // 録画トグル
       recording = !recording;
       if(recording){
-        macro="";
-        lastState = readButtonsSwitch();
+        macro = "";
+        lastState  = manual;
         lastChange = millis();
       }else{
-        recordState(readButtonsSwitch());
+        recordState(manual);
         saveMacro();
       }
     }else{
-      if(macro.length()) playing = true;
+      // マクロ再生
+      if(macro.length() > 0){
+        playing = true;
+      }
     }
     pressTime = 0;
   }
 
-  // ===== Switch モード =====
-  if(mode == MODE_SWITCH){
+  // ==== 録画処理 ====
+  if(recording && manual != lastState){
+    recordState(lastState);
+    lastState = manual;
+  }
 
-    uint16_t manual = readButtonsSwitch();
+  // ==== マクロ再生 ====
+  static int idx = 0;
+  static unsigned long waitUntil = 0;
 
-    if(recording && manual != lastState){
-      recordState(lastState);
-      lastState = manual;
+  if(playing && millis() >= waitUntil){
+    int c1 = macro.indexOf(",", idx);
+    if(c1 == -1){
+      playing = false;
+      idx = 0;
+      macroButtons = 0;
+    }else{
+      macroButtons = macro.substring(idx, c1).toInt();
+      idx = c1 + 1;
+
+      int c2 = macro.indexOf(",", idx);
+      int delayMs = macro.substring(idx, c2).toInt();
+      idx = c2 + 1;
+
+      waitUntil = millis() + delayMs;
     }
-
-    uint16_t merged = manual | macroButtons;
-
-    SwitchGamepad.leftXAxis(255 - axisSwitch(LX));
-    SwitchGamepad.leftYAxis(255 - axisSwitch(LY));
-    SwitchGamepad.rightXAxis(axisSwitch(RX));
-    SwitchGamepad.rightYAxis(axisSwitch(RY));
-
-    SwitchGamepad.dPad(
-      !digitalRead(UP),
-      !digitalRead(DOWN),
-      !digitalRead(LEFT),
-      !digitalRead(RIGHT)
-    );
-
-    SwitchGamepad.buttons(merged);
-    SwitchGamepad.loop();
   }
 
-  // ===== USBHID モード =====
-  else{
+  // ==== 手動 + マクロ合成 ====
+  uint16_t merged = manual | macroButtons;
 
-    uint32_t buttons = readButtonsUSB();
+  // ==== スティック ====
+  Gamepad.leftXAxis(255 - axis(LX));
+  Gamepad.leftYAxis(255 - axis(LY));
+  Gamepad.rightXAxis(axis(RX));
+  Gamepad.rightYAxis(axis(RY));
 
-    uint8_t hat = HAT_CENTER;
-    if(!digitalRead(UP))       hat = HAT_UP;
-    else if(!digitalRead(RIGHT)) hat = HAT_RIGHT;
-    else if(!digitalRead(DOWN))  hat = HAT_DOWN;
-    else if(!digitalRead(LEFT))  hat = HAT_LEFT;
+  // ==== DPad ====
+  Gamepad.dPad(
+    !digitalRead(UP),
+    !digitalRead(DOWN),
+    !digitalRead(LEFT),
+    !digitalRead(RIGHT)
+  );
 
-    USBGamepad.send(
-      axisUSB(LX),
-      axisUSB(LY),
-      axisUSB(RX),
-      axisUSB(RY),
-      0, 0,
-      hat,
-      buttons
-    );
-  }
+  // ==== ボタン送信 ====
+  Gamepad.buttons(merged);
+  Gamepad.loop();
 
   delay(5);
 }
