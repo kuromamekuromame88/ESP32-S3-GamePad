@@ -83,6 +83,28 @@ uint16_t readButtons(){
   return s;
 }
 
+//GenericHID用の変換関数
+uint16_t convToGrb(uint16_t ns){
+  uint16_t g = 0;
+  if(ns & (1<<NSButton_A)) g |=1<<0;
+  if(ns & (1<<NSButton_B)) g |=1<<1;
+  if(ns & (1<<NSButton_X)) g |=1<<2;
+  if(ns & (1<<NSButton_Y)) g |=1<<3;
+
+  if(ns & (1<<NSButton_LeftThrottle)) g |=1<<4;
+  if(ns & (1<<NSButton_RightThrottle)) g |=1<<5;
+  if(ns & (1<<NSButton_LeftTrigger)) g |=1<<6;
+  if(ns & (1<<NSButton_RightTrigger)) g |=1<<7;
+
+  if(ns & (1<<NSButton_Minus)) g |=1<<8;
+  if(ns & (1<<NSButton_Plus)) g |=1<<9;
+
+  if(ns & (1<<NSButton_LeftStick)) g |=1<<10;
+  if(ns & (1<<NSButton_RightStick)) g |=1<<11;
+
+  return g;
+}
+
 // ================= マクロ保存 =================
 void saveMacro(){
   prefs.begin("macro", false);
@@ -239,7 +261,7 @@ void loop(){
     Gamepad.buttons(merged);
     Gamepad.loop();
   }else{
-    hidReport.buttons = merged;
+    hidReport.buttons = convToGrb(merged);
     hidReport.x = lx;
     hidReport.y = ly;
     hidReport.z = rx;
