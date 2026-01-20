@@ -60,90 +60,30 @@ uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
 
-// ================= ボタン読み取り =================
+// ================= ボタン読み取り（論理状態） =================
 uint16_t readButtons(){
   uint16_t s=0;
 
-  if(!digitalRead(BTN_Y)) s|=1<<0;
-  if(!digitalRead(BTN_B)) s|=1<<1;
-  if(!digitalRead(BTN_A)) s|=1<<2;
-  if(!digitalRead(BTN_X)) s|=1<<3;
+  if(!digitalRead(BTN_A)) s |= 1<<0; // Button1
+  if(!digitalRead(BTN_B)) s |= 1<<1; // Button2
+  if(!digitalRead(BTN_X)) s |= 1<<2; // Button3
+  if(!digitalRead(BTN_Y)) s |= 1<<3; // Button4
 
-  if(!digitalRead(ZL)) s|=1<<4;
-  if(!digitalRead(ZR)) s|=1<<5;
-  if(!digitalRead(L))  s|=1<<6;
-  if(!digitalRead(R))  s|=1<<7;
+  if(!digitalRead(L))  s |= 1<<4;    // Button5
+  if(!digitalRead(R))  s |= 1<<5;    // Button6
+  if(!digitalRead(ZL)) s |= 1<<6;    // Button7
+  if(!digitalRead(ZR)) s |= 1<<7;    // Button8
 
-  if(!digitalRead(MINUS)) s|=1<<8;
-  if(!digitalRead(PLUS))  s|=1<<9;
+  if(!digitalRead(MINUS)) s |= 1<<8; // Button9
+  if(!digitalRead(PLUS))  s |= 1<<9; // Button10
 
-  if(!digitalRead(LB)) s|=1<<10;
-  if(!digitalRead(RB)) s|=1<<11;
+  if(!digitalRead(LB)) s |= 1<<10;   // Button11
+  if(!digitalRead(RB)) s |= 1<<11;   // Button12
 
   return s;
 }
 
-//GenericHID用の変換関数
-uint16_t convToGrb(uint16_t ns){
-  uint16_t g = 0;
-  if(ns & (1<<NSButton_A)) g |=1<<0;
-  if(ns & (1<<NSButton_B)) g |=1<<1;
-  if(ns & (1<<NSButton_X)) g |=1<<2;
-  if(ns & (1<<NSButton_Y)) g |=1<<3;
-
-  if(ns & (1<<NSButton_LeftThrottle)) g |=1<<4;
-  if(ns & (1<<NSButton_RightThrottle)) g |=1<<5;
-  if(ns & (1<<NSButton_LeftTrigger)) g |=1<<6;
-  if(ns & (1<<NSButton_RightTrigger)) g |=1<<7;
-
-  if(ns & (1<<NSButton_Minus)) g |=1<<8;
-  if(ns & (1<<NSButton_Plus)) g |=1<<9;
-
-  if(ns & (1<<NSButton_LeftStick)) g |=1<<10;
-  if(ns & (1<<NSButton_RightStick)) g |=1<<11;
-
-  return g;
-}
-
-// ================= マクロ保存 =================
-void saveMacro(){
-  prefs.begin("macro", false);
-  prefs.putString("data", macro);
-  prefs.end();
-}
-void loadMacro(){
-  prefs.begin("macro", true);
-  macro=prefs.getString("data","");
-  prefs.end();
-}
-
-void recordState(uint16_t s){
-  macro+=String(s)+","+String(millis()-lastChange)+",";
-  lastChange=millis();
-}
-
-// ================= モード判定 =================
-void detectMode(){
-  pinMode(PLUS, INPUT_PULLUP);
-  delay(10);
-  if(!digitalRead(PLUS)){
-    mode=MODE_GENERIC_HID;
-  }
-}
-
-// ================= Generic HID Report =================
-typedef struct __attribute__((packed)){
-  uint16_t buttons;
-  uint8_t x;
-  uint8_t y;
-  uint8_t z;
-  uint8_t rz;
-  uint8_t hat;
-} HIDReport;
-
-HIDReport hidReport;
-
-// ================= HAT計算 =================
+// ================= HAT =================
 uint8_t calcHat(){
   bool u=!digitalRead(UP);
   bool d=!digitalRead(DOWN);
@@ -158,7 +98,28 @@ uint8_t calcHat(){
   if(r) return 2;
   if(d) return 4;
   if(l) return 6;
-  return 8; // neutral
+  return 8;
+}
+
+// ================= HID Report =================
+typedef struct __attribute__((packed)){
+  uint16_t buttons;   // Button 1〜16
+  uint8_t hat;        // 0〜7, 8=neutral
+  uint8_t x;
+  uint8_t y;
+  uint8_t z;
+  uint8_t rz;
+} HIDReport;
+
+HIDReport hidReport;
+
+// ================= モード判定 =================
+void detectMode(){
+  pinMode(PLUS, INPUT_PULLUP);
+  delay(10);
+  if(!digitalRead(PLUS)){
+    mode = MODE_GENERIC_HID;
+  }
 }
 
 // ================= setup =================
@@ -167,7 +128,6 @@ void setup(){
   for(int p:pins) pinMode(p,INPUT_PULLUP);
 
   analogReadResolution(12);
-  loadMacro();
   detectMode();
 
   if(mode==MODE_SWITCH){
@@ -181,65 +141,9 @@ void setup(){
 // ================= loop =================
 void loop(){
 
-  uint16_t manual=readButtons();
+  uint16_t manual = readButtons();
+  uint16_t merged = manual;
 
-  // ---- マクロ制御 ----
-  if(!digitalRead(MStart1)){
-    if(!pressTime) pressTime=millis();
-  }else if(pressTime){
-    unsigned long dt=millis()-pressTime;
-
-    if(dt>1000){
-      recording=!recording;
-      if(recording){
-        macro="";
-        lastState=manual;
-        lastChange=millis();
-      }else{
-        recordState(manual);
-        saveMacro();
-      }
-    }else{
-      if(manual==0 && macro.length()>0){
-        playing=true;
-      }else{
-        turbo=!turbo;
-      }
-    }
-    pressTime=0;
-  }
-
-  if(recording && manual!=lastState){
-    recordState(lastState);
-    lastState=manual;
-  }
-
-  static int idx=0;
-  static unsigned long wait=0;
-
-  if(playing && millis()>wait){
-    int c1=macro.indexOf(",",idx);
-    if(c1==-1){
-      playing=false;
-      idx=0;
-      macroButtons=0;
-    }else{
-      macroButtons=macro.substring(idx,c1).toInt();
-      idx=c1+1;
-      int c2=macro.indexOf(",",idx);
-      int d=macro.substring(idx,c2).toInt();
-      idx=c2+1;
-      wait=millis()+d;
-    }
-  }
-
-  if(turbo){
-    macroButtons = ((millis()/80)%2)?0:manual;
-  }
-
-  uint16_t merged = manual | macroButtons;
-
-  // ---- 軸 ----
   uint8_t lx=255-axis(LX);
   uint8_t ly=255-axis(LY);
   uint8_t rx=axis(RX);
@@ -261,12 +165,12 @@ void loop(){
     Gamepad.buttons(merged);
     Gamepad.loop();
   }else{
-    hidReport.buttons = convToGrb(merged);
+    hidReport.buttons = merged;
+    hidReport.hat = calcHat();
     hidReport.x = lx;
     hidReport.y = ly;
     hidReport.z = rx;
     hidReport.rz = ry;
-    hidReport.hat = calcHat();
 
     HID.SendReport(1, &hidReport, sizeof(hidReport));
   }
