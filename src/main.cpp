@@ -1,23 +1,21 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "switch_ESP32.h"
-#include <Adafruit_TinyUSB.h>
+#include <BleGamepad.h>
 
+// ================== インスタンス ==================
 NSGamepad Gamepad;
+BleGamepad bleGamepad;
 Preferences prefs;
 
-// ================= TinyUSB =================
-Adafruit_USBD_HID usb_hid;
-hid_gamepad_report_t hidReport;
-
-// ================= モード =================
+// ================== モード ==================
 enum Mode {
   MODE_SWITCH,
-  MODE_GENERIC
+  MODE_BLE
 };
 Mode mode = MODE_SWITCH;
 
-// ================= ピン定義 =================
+// ================== ピン定義 ==================
 #define MStart1 42
 
 #define LX 18
@@ -46,12 +44,12 @@ Mode mode = MODE_SWITCH;
 #define BTN_X 7
 #define BTN_Y 6
 
-// ================= ユーティリティ =================
+// ================== ユーティリティ ==================
 uint8_t axis(int pin){
   return map(analogRead(pin), 0, 4095, 0, 255);
 }
 
-// ================= マクロ =================
+// ================== マクロ ==================
 String macro="";
 bool recording=false;
 bool playing=false;
@@ -63,7 +61,7 @@ uint16_t lastState=0;
 unsigned long pressTime=0;
 uint16_t macroButtons=0;
 
-// ================= ボタン読み取り（Switch基準） =================
+// ================== ボタン取得（NS互換） ==================
 uint16_t readButtons(){
   uint16_t s = 0;
 
@@ -87,7 +85,7 @@ uint16_t readButtons(){
   return s;
 }
 
-// ================= マクロ保存 =================
+// ================== マクロ保存 ==================
 void recordState(uint16_t s){
   macro += String(s) + "," + String(millis() - lastChange) + ",";
   lastChange = millis();
@@ -105,75 +103,52 @@ void loadMacro(){
   prefs.end();
 }
 
-// ================= HAT計算（TinyUSB） =================
-uint8_t calcHat(){
-  bool u=!digitalRead(UP);
-  bool d=!digitalRead(DOWN);
-  bool l=!digitalRead(LEFT);
-  bool r=!digitalRead(RIGHT);
-
-  if(u && r) return GAMEPAD_HAT_UP_RIGHT;
-  if(r && d) return GAMEPAD_HAT_DOWN_RIGHT;
-  if(d && l) return GAMEPAD_HAT_DOWN_LEFT;
-  if(l && u) return GAMEPAD_HAT_UP_LEFT;
-  if(u) return GAMEPAD_HAT_UP;
-  if(r) return GAMEPAD_HAT_RIGHT;
-  if(d) return GAMEPAD_HAT_DOWN;
-  if(l) return GAMEPAD_HAT_LEFT;
-  return GAMEPAD_HAT_CENTERED;
-}
-
-// ================= モード判定 =================
-void detectMode(){
-  pinMode(PLUS, INPUT_PULLUP);
-  delay(10);
-  if(!digitalRead(PLUS)){
-    mode = MODE_GENERIC;
-  }
-}
-
-// ================= setup =================
+// ================== セットアップ ==================
 void setup(){
   int pins[]={MStart1,LB,RB,UP,RIGHT,DOWN,LEFT,ZL,ZR,L,R,PLUS,MINUS,BTN_A,BTN_B,BTN_X,BTN_Y};
   for(int p:pins) pinMode(p,INPUT_PULLUP);
 
   analogReadResolution(12);
   loadMacro();
-  detectMode();
+
+  delay(10);
+  if(!digitalRead(PLUS)){
+    mode = MODE_BLE;
+  }
 
   if(mode == MODE_SWITCH){
     Gamepad.begin();
+    USB.begin();
   }else{
-    usb_hid.begin();
+    bleGamepad.begin();
   }
-
-  USB.begin();
 }
 
-// ================= loop =================
+// ================== メインループ ==================
 void loop(){
+
   uint16_t manual = readButtons();
 
-  // ---- MStart 判定 ----
+  // ---- MStart 処理 ----
   if(!digitalRead(MStart1)){
-    if(!pressTime) pressTime=millis();
+    if(!pressTime) pressTime = millis();
   }else if(pressTime){
-    unsigned long held = millis()-pressTime;
+    unsigned long held = millis() - pressTime;
 
     if(held > 1000){
       recording = !recording;
       if(recording){
         macro="";
-        lastState=manual;
-        lastChange=millis();
+        lastState = manual;
+        lastChange = millis();
       }else{
         recordState(manual);
         saveMacro();
       }
     }else{
-      if(manual & (1<<NSButton_A)){
+      if(manual & (1 << NSButton_A)){
         rapidA = true;
-      }else if(macro.length()>0){
+      }else if(macro.length()){
         playing = true;
       }
     }
@@ -183,51 +158,51 @@ void loop(){
   // ---- A連打 ----
   static bool rapidState=false;
   if(rapidA){
-    if(millis()-lastRapid > 40){
-      rapidState=!rapidState;
-      lastRapid=millis();
+    if(millis() - lastRapid > 40){
+      rapidState = !rapidState;
+      lastRapid = millis();
     }
-    if(digitalRead(MStart1)) rapidA=false;
+  }else{
+    rapidState = false;
   }
 
-  if(rapidState) manual |= (1<<NSButton_A);
-  else manual &= ~(1<<NSButton_A);
+  if(rapidState) manual |=  (1 << NSButton_A);
+  else           manual &= ~(1 << NSButton_A);
 
   // ---- 録画 ----
-  if(recording && manual!=lastState){
+  if(recording && manual != lastState){
     recordState(lastState);
-    lastState=manual;
+    lastState = manual;
   }
 
   // ---- マクロ再生 ----
   static int idx=0;
   static unsigned long wait=0;
 
-  if(playing && millis()>wait){
-    int c1=macro.indexOf(",",idx);
-    if(c1==-1){
-      playing=false;
-      idx=0;
-      macroButtons=0;
+  if(playing && millis() > wait){
+    int c1 = macro.indexOf(",", idx);
+    if(c1 == -1){
+      playing=false; idx=0; macroButtons=0;
     }else{
-      macroButtons=macro.substring(idx,c1).toInt();
-      idx=c1+1;
-      int c2=macro.indexOf(",",idx);
-      int d=macro.substring(idx,c2).toInt();
-      idx=c2+1;
-      wait=millis()+d;
+      macroButtons = macro.substring(idx, c1).toInt();
+      idx = c1 + 1;
+      int c2 = macro.indexOf(",", idx);
+      int d = macro.substring(idx, c2).toInt();
+      idx = c2 + 1;
+      wait = millis() + d;
     }
   }
 
   uint16_t merged = manual | macroButtons;
 
-  uint8_t lx = 255-axis(LX);
-  uint8_t ly = 255-axis(LY);
+  uint8_t lx = 255 - axis(LX);
+  uint8_t ly = 255 - axis(LY);
   uint8_t rx = axis(RX);
   uint8_t ry = axis(RY);
 
-  // ================= 出力 =================
+  // ================== 出力 ==================
   if(mode == MODE_SWITCH){
+
     Gamepad.leftXAxis(lx);
     Gamepad.leftYAxis(ly);
     Gamepad.rightXAxis(rx);
@@ -242,18 +217,19 @@ void loop(){
 
     Gamepad.buttons(merged);
     Gamepad.loop();
-  }else{
-    memset(&hidReport, 0, sizeof(hidReport));
 
-    hidReport.x  = lx;
-    hidReport.y  = ly;
-    hidReport.z  = rx;
-    hidReport.rz = ry;
-    hidReport.hat = calcHat();
+  }else if(bleGamepad.isConnected()){
 
-    hidReport.buttons = merged; // TinyUSB側が正しく解釈
+    bleGamepad.setLeftThumb(lx, ly);
+    bleGamepad.setRightThumb(rx, ry);
 
-    usb_hid.sendReport(0, &hidReport, sizeof(hidReport));
+    bleGamepad.setButtons(merged);
+
+    if(!digitalRead(UP))       bleGamepad.setHat(HAT_UP);
+    else if(!digitalRead(RIGHT)) bleGamepad.setHat(HAT_RIGHT);
+    else if(!digitalRead(DOWN))  bleGamepad.setHat(HAT_DOWN);
+    else if(!digitalRead(LEFT))  bleGamepad.setHat(HAT_LEFT);
+    else                         bleGamepad.setHat(HAT_CENTERED);
   }
 
   delay(5);
