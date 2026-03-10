@@ -38,23 +38,23 @@ jobs:
           echo "Source commit: $GITHUB_SHA" >> firmware/${{ matrix.board }}/info.txt
 
       # --- firmware-buildsブランチにpush ---
-      - name: Push firmware to firmware-builds branch
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+      #- name: Push firmware to firmware-builds branch
+      #  run: |
+      #    git config user.name "github-actions"
+      #    git config user.email "actions@github.com"
 
-          git fetch origin
-          git checkout -B firmware-builds
+      #    git fetch origin
+      #    git checkout -B firmware-builds
 
-          for item in * .*; do
-            if [ "$item" != "." ] && [ "$item" != ".." ] && [ "$item" != ".git" ] && [ "$item" != "firmware" ]; then
-              rm -rf "$item"
-            fi
-          done
+      #    for item in * .*; do
+      #      if [ "$item" != "." ] && [ "$item" != ".." ] && [ "$item" != ".git" ] && [ "$item" != "firmware" ]; then
+      #        rm -rf "$item"
+      #      fi
+      #    done
 
-          git add -A
-          git commit -m "Add firmware for ${{ matrix.board }} from commit $GITHUB_SHA" || echo "No changes to commit"
-          git push https://x-access-token:${{ secrets.MY_PAT }}@github.com/${{ github.repository }} firmware-builds --force
+      #    git add -A
+      #    git commit -m "Add firmware for ${{ matrix.board }} from commit $GITHUB_SHA" || echo "No changes to commit"
+      #    git push https://x-access-token:${{ secrets.MY_PAT }}@github.com/${{ github.repository }} firmware-builds --force
 
       - name: artifactへのアップロード
         uses: actions/upload-artifact@v4
