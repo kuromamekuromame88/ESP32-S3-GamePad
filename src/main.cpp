@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#define test
+#define main
 
 
 #ifdef main
